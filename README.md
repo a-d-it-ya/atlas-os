@@ -25,7 +25,7 @@ pip install websockets
 python simulator/fake_radar.py
 
 # Terminal 2
-python core/shakti_core.py
+python core/atlas_core.py
 
 # Terminal 3 — open in browser
 frontend/index.html
@@ -38,7 +38,7 @@ frontend/index.html
 ```
 shakti-os/
 ├── core/
-│   └── shakti_core.py      # Entity pipeline
+│   └── atlas_core.py      # Entity pipeline
 ├── simulator/
 │   └── fake_radar.py       # Simulated radar
 └── frontend/
