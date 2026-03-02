@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Shakti OS — Sector View</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #060810; font-family: 'Courier New', monospace; }
+    #map { height: 100vh; }
+
+    /* HUD */
+    #hud {
+      position: fixed; top: 16px; left: 16px; z-index: 999;
+      background: rgba(6,8,16,0.93); border: 1px solid #1c2338;
+      padding: 14px 18px; color: #3ddc84;
+      font-size: 12px; letter-spacing: 0.08em; min-width: 240px;
+    }
+    #hud .title {
+      font-size: 13px; font-weight: bold; color: #eef2ff;
+      margin-bottom: 10px; border-bottom: 1px solid #1c2338; padding-bottom: 8px;
+    }
+    #hud .row { display: flex; justify-content: space-between; margin-top: 6px; }
+    #hud .label { color: #4a5870; }
+    #hud .value { color: #3ddc84; }
+    #hud .value.red { color: #ff5566; }
+
+    /* Connection */
+    #conn-status {
+      position: fixed; top: 16px; right: 16px; z-index: 999;
+      background: rgba(6,8,16,0.93); border: 1px solid #1c2338;
+      padding: 10px 16px; font-size: 11px; letter-spacing: 0.1em;
+    }
+    .dot {
+      display: inline-block; width: 8px; height: 8px;
+      border-radius: 50%; margin-right: 8px; animation: blink 1.5s infinite;
+    }
+    .dot.green { background: #3ddc84; }
+    .dot.red   { background: #ff5566; animation: none; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* Zone controls */
+    #zone-controls {
+      position: fixed; top: 120px; right: 16px; z-index: 999;
+      background: rgba(6,8,16,0.93); border: 1px solid #1c2338;
+      padding: 14px 16px; font-size: 11px; min-width: 200px;
+    }
+    #zone-controls .zc-title {
+      color: #ffb347; letter-spacing: 0.2em; font-size: 10px;
+      text-transform: uppercase; margin-bottom: 12px;
+      border-bottom: 1px solid #1c2338; padding-bottom: 8px;
+    }
+    .zc-btn {
+      display: block; width: 100%; padding: 8px 12px;
+      background: rgba(255,179,71,0.08); border: 1px solid #ffb347;
+      color: #ffb347; font-family: 'Courier New', monospace;
+      font-size: 11px; letter-spacing: 0.1em; cursor: pointer;
+      margin-bottom: 8px; text-align: left; transition: all 0.15s;
+    }
+    .zc-btn:hover { background: rgba(255,179,71,0.18); }
+    .zc-btn.active { background: rgba(255,179,71,0.25); border-color: #fff; color: #fff; }
+    .zc-btn.danger {
+      background: rgba(255,85,102,0.08); border-color: #ff5566; color: #ff5566;
+    }
+    .zc-btn.danger:hover { background: rgba(255,85,102,0.2); }
+    #zone-list { margin-top: 8px; max-height: 120px; overflow-y: auto; }
+    .zone-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 5px 0; border-bottom: 1px solid #1c2338;
+      font-size: 10px; color: #4a5870;
+    }
+    .zone-item .zname { color: #ffb347; }
+    .zone-item .zdel {
+      background: none; border: none; color: #ff5566;
+      cursor: pointer; font-size: 11px; padding: 0 4px;
+    }
+
+    /* Alert panel */
+    #alert-panel {
+      position: fixed; bottom: 16px; left: 16px; z-index: 999;
+      background: rgba(6,8,16,0.93); border: 1px solid #1c2338;
+      padding: 12px 16px; font-size: 10px; color: #4a5870;
+      max-height: 200px; overflow-y: auto; min-width: 400px;
+    }
+    #alert-panel .ap-title {
+      font-size: 10px; letter-spacing: 0.2em; margin-bottom: 8px;
+      text-transform: uppercase; padding-bottom: 6px;
+      border-bottom: 1px solid #1c2338;
+    }
+    .alert-entry {
+      display: flex; gap: 8px; align-items: flex-start;
+      padding: 6px 0; border-bottom: 1px solid #0d1117;
+      animation: alertIn 0.3s ease;
+    }
+    @keyframes alertIn { from { opacity:0; transform:translateX(-8px); } to { opacity:1; transform:translateX(0); } }
+    .alert-entry .a-badge {
+      background: #ff5566; color: #fff; font-size: 9px;
+      padding: 2px 6px; letter-spacing: 0.1em; white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .alert-entry .a-msg { color: #eef2ff; line-height: 1.6; }
+    .alert-entry .a-time { color: #253050; white-space: nowrap; flex-shrink: 0; }
+
+    /* Breach flash overlay */
+    #breach-flash {
+      position: fixed; inset: 0; z-index: 9999;
+      pointer-events: none; opacity: 0;
+      background: rgba(255,85,102,0.15);
+      border: 3px solid #ff5566;
+      transition: opacity 0.1s;
+    }
+
+    /* Drawing hint */
+    #draw-hint {
+      position: fixed; bottom: 230px; left: 50%; transform: translateX(-50%);
+      z-index: 999; background: rgba(255,179,71,0.9);
+      color: #060810; padding: 8px 20px;
+      font-size: 12px; letter-spacing: 0.1em;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="breach-flash"></div>
+<div id="draw-hint">CLICK ON MAP TO DRAW ZONE — DOUBLE-CLICK TO FINISH</div>
+
+<div id="hud">
+  <div class="title">⬡ SHAKTI OS v0.2 — DEPSANG SECTOR</div>
+  <div class="row"><span class="label">ACTIVE TRACKS</span><span class="value" id="track-count">0</span></div>
+  <div class="row"><span class="label">ZONE BREACHES</span><span class="value red" id="breach-count">0</span></div>
+  <div class="row"><span class="label">ZONES ACTIVE</span><span class="value" id="zone-count">0</span></div>
+  <div class="row"><span class="label">TOWER</span><span class="value">TOWER_01_DEPSANG</span></div>
+  <div class="row"><span class="label">LAST UPDATE</span><span class="value" id="last-update">—</span></div>
+</div>
+
+<div id="conn-status">
+  <span class="dot red" id="conn-dot"></span>
+  <span id="conn-text" style="color:#ff5566">DISCONNECTED</span>
+</div>
+
+<div id="zone-controls">
+  <div class="zc-title">// Restricted Zones</div>
+  <button class="zc-btn" id="draw-btn" onclick="startDrawing()">＋ DRAW NEW ZONE</button>
+  <button class="zc-btn danger" onclick="clearAllZones()">✕ CLEAR ALL ZONES</button>
+  <div id="zone-list"></div>
+</div>
+
+<div id="alert-panel">
+  <div class="ap-title" id="alert-title" style="color:#4a5870">// Alert Log — No alerts yet</div>
+  <div id="alert-entries"></div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+
+// ── MAP SETUP ──
+const map = L.map('map', { zoomControl: false }).setView([34.1526, 77.5771], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap'
+}).addTo(map);
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+// Tower marker
+L.circleMarker([34.1526, 77.5771], {
+  color: '#3ddc84', fillColor: '#3ddc84', fillOpacity: 1, radius: 7
+}).bindPopup('<b>TOWER_01_DEPSANG</b><br>Radar active').addTo(map);
+
+
+// ── ZONE SYSTEM ──
+let zones      = [];       // { id, name, polygon, layer, breached }
+let zoneCount  = 0;
+let drawing    = false;
+let drawPoints = [];
+let drawLayer  = null;
+let tempLine   = null;
+
+function startDrawing() {
+  drawing    = true;
+  drawPoints = [];
+  document.getElementById('draw-btn').classList.add('active');
+  document.getElementById('draw-btn').textContent = '⏹ DRAWING... (dbl-click finish)';
+  document.getElementById('draw-hint').style.display = 'block';
+  map.getContainer().style.cursor = 'crosshair';
+}
+
+function stopDrawing() {
+  drawing = false;
+  document.getElementById('draw-btn').classList.remove('active');
+  document.getElementById('draw-btn').textContent = '＋ DRAW NEW ZONE';
+  document.getElementById('draw-hint').style.display = 'none';
+  map.getContainer().style.cursor = '';
+  if (tempLine) { map.removeLayer(tempLine); tempLine = null; }
+}
+
+// Map click — add point to current zone
+map.on('click', function(e) {
+  if (!drawing) return;
+  drawPoints.push([e.latlng.lat, e.latlng.lng]);
+
+  // Draw preview line
+  if (tempLine) map.removeLayer(tempLine);
+  if (drawPoints.length > 1) {
+    tempLine = L.polyline(drawPoints, {
+      color: '#ffb347', dashArray: '6,4', weight: 1.5
+    }).addTo(map);
+  }
+});
+
+// Double-click — finish zone
+map.on('dblclick', function(e) {
+  if (!drawing || drawPoints.length < 3) return;
+  e.originalEvent.preventDefault();
+
+  zoneCount++;
+  const zoneId   = `ZONE_${String(zoneCount).padStart(2,'0')}`;
+  const zoneName = `RESTRICTED-${zoneCount}`;
+
+  // Draw filled polygon
+  const layer = L.polygon(drawPoints, {
+    color: '#ffb347', fillColor: '#ffb347',
+    fillOpacity: 0.12, weight: 2, dashArray: '6,3'
+  }).bindTooltip(zoneName, {
+    permanent: true, direction: 'center',
+    className: 'zone-label'
+  }).addTo(map);
+
+  zones.push({
+    id:       zoneId,
+    name:     zoneName,
+    polygon:  drawPoints.slice(),
+    layer,
+    breached: false
+  });
+
+  stopDrawing();
+  updateZoneList();
+  updateZoneCount();
+});
+
+function deleteZone(zoneId) {
+  const idx = zones.findIndex(z => z.id === zoneId);
+  if (idx === -1) return;
+  map.removeLayer(zones[idx].layer);
+  zones.splice(idx, 1);
+  updateZoneList();
+  updateZoneCount();
+}
+
+function clearAllZones() {
+  zones.forEach(z => map.removeLayer(z.layer));
+  zones = [];
+  updateZoneList();
+  updateZoneCount();
+}
+
+function updateZoneList() {
+  const container = document.getElementById('zone-list');
+  container.innerHTML = zones.length === 0
+    ? '<div style="color:#253050;font-size:10px;padding:6px 0">No zones defined</div>'
+    : zones.map(z => `
+        <div class="zone-item">
+          <span class="zname">${z.name}</span>
+          <button class="zdel" onclick="deleteZone('${z.id}')">✕</button>
+        </div>`).join('');
+}
+
+function updateZoneCount() {
+  document.getElementById('zone-count').textContent = zones.length;
+}
+
+
+// ── POINT-IN-POLYGON (ray casting) ──
+function pointInPolygon(lat, lon, polygon) {
+  let inside = false;
+  const x = lon, y = lat;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][1], yi = polygon[i][0];
+    const xj = polygon[j][1], yj = polygon[j][0];
+    const intersect = ((yi > y) !== (yj > y))
+      && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+
+// ── ALERT SYSTEM ──
+let breachCount   = 0;
+const alertedTracks = new Set();   // track IDs already alerted — no spam
+
+function checkZoneBreaches(entity) {
+  const lat = entity.location.navic_lat;
+  const lon = entity.location.navic_lon;
+  const id  = entity.entity_id;
+
+  // Only alert once per track per zone
+  if (alertedTracks.has(id)) return;
+
+  for (const zone of zones) {
+    if (pointInPolygon(lat, lon, zone.polygon)) {
+      alertedTracks.add(id);
+      breachCount++;
+      fireAlert(entity, zone);
+      flashZone(zone);
+      break;
+    }
+  }
+}
+
+function fireAlert(entity, zone) {
+  const shortId = entity.entity_id.slice(0,8).toUpperCase();
+  const time    = new Date().toLocaleTimeString();
+
+  // Update breach counter
+  document.getElementById('breach-count').textContent = breachCount;
+
+  // Update alert panel title
+  const title = document.getElementById('alert-title');
+  title.textContent = `// ⚠ ZONE BREACH DETECTED`;
+  title.style.color = '#ff5566';
+
+  // Add alert entry
+  const container = document.getElementById('alert-entries');
+  const div = document.createElement('div');
+  div.className = 'alert-entry';
+  div.innerHTML = `
+    <span class="a-badge">BREACH</span>
+    <span class="a-msg">
+      TRK-${shortId} entered <b>${zone.name}</b> ·
+      ${entity.classification.category} ·
+      ${entity.kinematics.speed_kmh} km/h
+    </span>
+    <span class="a-time">${time}</span>
+  `;
+  container.prepend(div);
+
+  // Keep log to 20 entries
+  while (container.children.length > 20) {
+    container.removeChild(container.lastChild);
+  }
+
+  // Console log for terminal visibility
+  console.warn(`[ALERT] ZONE BREACH — TRK-${shortId} entered ${zone.name}`);
+}
+
+function flashZone(zone) {
+  // Flash the breach overlay
+  const flash = document.getElementById('breach-flash');
+  flash.style.opacity = '1';
+  setTimeout(() => flash.style.opacity = '0', 400);
+  setTimeout(() => flash.style.opacity = '1', 600);
+  setTimeout(() => flash.style.opacity = '0', 900);
+
+  // Turn zone red temporarily
+  zone.layer.setStyle({ color: '#ff5566', fillColor: '#ff5566', fillOpacity: 0.25 });
+  setTimeout(() => {
+    zone.layer.setStyle({ color: '#ffb347', fillColor: '#ffb347', fillOpacity: 0.12 });
+  }, 2000);
+}
+
+
+// ── TRACK RENDERING ──
+const markers = {};
+
+function getMarkerColor(entity) {
+  if (entity.disposition === 'HOSTILE') return '#ff5566';
+  if (entity.disposition === 'FRIEND')  return '#3ddc84';
+  if (entity.kinematics.is_moving)      return '#ffb347';
+  return '#5badff';
+}
+
+function updateEntity(entity) {
+  const lat     = entity.location.navic_lat;
+  const lon     = entity.location.navic_lon;
+  const color   = getMarkerColor(entity);
+  const shortId = entity.entity_id.slice(0,8).toUpperCase();
+
+  if (!markers[entity.entity_id]) {
+    const marker = L.circleMarker([lat, lon], {
+      color, fillColor: color, fillOpacity: 0.8, radius: 9, weight: 2
+    }).bindPopup(`
+      <div style="font-family:monospace;font-size:12px;min-width:190px">
+        <b style="color:#ff5566">⚠ HOSTILE TRACK</b><br><br>
+        <b>ID:</b> TRK-${shortId}<br>
+        <b>TOWER:</b> ${entity.provenance.source_tower}<br>
+        <b>CLASS:</b> ${entity.classification.category}<br>
+        <b>CONFIDENCE:</b> ${(entity.classification.confidence*100).toFixed(0)}%<br>
+        <b>SPEED:</b> ${entity.kinematics.speed_kmh} km/h<br>
+        <b>DISPOSITION:</b> <span style="color:#ff5566">${entity.disposition}</span>
+      </div>
+    `).addTo(map);
+    markers[entity.entity_id] = marker;
+  } else {
+    markers[entity.entity_id].setLatLng([lat, lon]);
+    markers[entity.entity_id].setStyle({ color, fillColor: color });
+  }
+
+  // Check every update if inside any zone
+  checkZoneBreaches(entity);
+
+  document.getElementById('track-count').textContent = Object.keys(markers).length;
+  document.getElementById('last-update').textContent  = new Date().toLocaleTimeString();
+}
+
+
+// ── WEBSOCKET ──
+function connect() {
+  const ws = new WebSocket('ws://localhost:8000');
+
+  ws.onopen = () => {
+    document.getElementById('conn-dot').className   = 'dot green';
+    document.getElementById('conn-text').textContent = 'CONNECTED — SHAKTI CORE';
+    document.getElementById('conn-text').style.color = '#3ddc84';
+  };
+
+  ws.onmessage = (event) => {
+    const entity = JSON.parse(event.data);
+    updateEntity(entity);
+  };
+
+  ws.onclose = () => {
+    document.getElementById('conn-dot').className   = 'dot red';
+    document.getElementById('conn-text').textContent = 'DISCONNECTED — retrying...';
+    document.getElementById('conn-text').style.color = '#ff5566';
+    setTimeout(connect, 2000);
+  };
+}
+
+connect();
+updateZoneList();
+</script>
+</body>
+</html>
