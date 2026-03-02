@@ -1,4 +1,4 @@
-# ⬡ Shakti OS
+# ⬡ Atlas OS
 
 Autonomous border surveillance and command platform for India's armed forces.
 
